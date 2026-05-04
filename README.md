@@ -322,7 +322,7 @@ bun run tui                # live dashboard (press 'f' for per-phase focus mode)
 ## How the scaffold works
 
 <p align="center">
-  <img src="diagrams/jepa-pipeline-v2.png" alt="Per-turn pipeline of the JEPA scaffold" width="100%" />
+  <img src="diagrams/jepa-pipeline-v3.png" alt="Per-turn pipeline of the JEPA scaffold" width="100%" />
 </p>
 
 Each agent turn runs six stages:
