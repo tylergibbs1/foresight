@@ -1,0 +1,63 @@
+{
+  "name": "foresight",
+  "version": "0.1.0",
+  "description": "A drop-in predictive-approval gate for LLM agents. Predict an action's outcome before running it, score the prediction against the goal, return a structured approve/reject decision. Plugs into any agent framework via a single async function.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./diff": "./src/diff.ts"
+  },
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js",
+        "default": "./dist/index.js"
+      },
+      "./diff": {
+        "types": "./dist/diff.d.ts",
+        "import": "./dist/diff.js",
+        "default": "./dist/diff.js"
+      }
+    }
+  },
+  "files": ["src", "dist", "README.md"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "prepublishOnly": "bun run typecheck && bun run test && bun run build"
+  },
+  "keywords": [
+    "llm",
+    "agent",
+    "ai-sdk",
+    "guardrail",
+    "approval",
+    "jepa",
+    "prediction",
+    "world-model",
+    "safety"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20",
+    "bun": ">=1.0"
+  },
+  "peerDependencies": {
+    "ai": ">=6.0.0-beta.128",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@langchain/core": "^1.1.44",
+    "@langchain/langgraph": "^1.2.9",
+    "@openai/agents": "^0.8.5",
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.5.0"
+  }
+}

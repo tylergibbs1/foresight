@@ -1,0 +1,25 @@
+{
+  "name": "jepa-scaffold-test",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "bun src/eval/cli.ts",
+    "eval:smoke": "bun src/eval/cli.ts --tasks 1 --seeds 1 --agents scaffold",
+    "tui": "bun src/eval/tui.tsx",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "2.0.106",
+    "@inkjs/ui": "^2.0.0",
+    "ai": "6.0.0-beta.128",
+    "ink": "^5.0.1",
+    "react": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.5.0"
+  }
+}
