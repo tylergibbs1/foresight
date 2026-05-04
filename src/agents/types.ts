@@ -108,7 +108,7 @@ export interface BaselineTurnRecord {
   events: ChangeEvent[];
 }
 
-export type AgentName = 'scaffold' | 'baseline' | 'thinking' | 'lite';
+export type AgentName = 'scaffold' | 'baseline' | 'thinking' | 'lite' | 'gated';
 
 export interface AgentRunResult {
   agent: AgentName;

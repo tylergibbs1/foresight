@@ -290,19 +290,38 @@ The library exists because we ran a hypothesis test, found a real signal,
 and stripped the result down to its load-bearing parts. The PRD is in
 [`PRD.md`](PRD.md); the trap tasks are in `src/tasks/traps.ts`.
 
-### Headline result (54-run paired eval, gpt-5.5, six implicit-trap families)
+### Headline result (72-run paired eval, gpt-5.5, six implicit-trap families)
 
 ```
-agent      success      destr/run   notes
-baseline   7/18  (39%)  0.89        vanilla ToolLoopAgent
-thinking   9/18  (50%)  0.61        same model + "think before acting" prompt
-scaffold   18/18 (100%) 0.00        full predictor + scorer + calibrator pipeline
+agent      success      destr   $/run    vs baseline   notes
+baseline   7/18  (39%)  16      $0.005   1.0×          vanilla ToolLoopAgent
+thinking   9/18  (50%)  11      $0.011   2.0×          + "think before acting" prompt
+gated      18/18 (100%) 0       $0.089   16.3×         vanilla + foresight.gate on mutations
+scaffold   18/18 (100%) 0       $0.140   25.7×         full pipeline (proposer + predictor × N + scorer + calibrator)
 ```
 
-Scaffold prevented **16 destructive actions in paired comparison, took 0 extra**.
-Cost ratio against baseline: ~26×. The economics don't justify general-purpose
-use, which is why the library is positioned as a guardrail for **irreversible
-actions you don't trust** — not as a replacement for your normal agent loop.
+Per family:
+
+```
+family            baseline   thinking   gated      scaffold
+trap_overwrite    3/3        3/3        3/3        3/3
+trap_glob         3/6        3/6        6/6        6/6
+trap_chain        0/6        0/6        6/6        6/6
+trap_orphan       1/3        3/3        3/3        3/3
+```
+
+The two material findings:
+
+1. **The published library (`gated`) reproduces the full scaffold's safety record** —
+   18/18 successes, zero destructive actions, identical per-family scores.
+2. **At ~36% lower cost than the scaffold** ($0.089 vs $0.140 per run). Skipping
+   the proposer's N-way fan-out and the calibration loop is the saving;
+   the predictive gate on mutations is what carries the safety.
+
+So the library is what's worth shipping, not the full research scaffold.
+That's why the package is positioned as a guardrail for irreversible
+actions, not as a replacement for your normal agent loop. Use it on the
+5 actions that scare you, and let cheap reads bypass.
 
 ### Quick start (experiment)
 

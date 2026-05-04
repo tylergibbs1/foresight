@@ -31,4 +31,5 @@ export const agentColor: Record<AgentName, string> = {
   baseline: 'yellow',
   thinking: 'magenta',
   lite: 'green',
+  gated: 'blue',
 };

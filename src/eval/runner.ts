@@ -1,6 +1,7 @@
 import { runScaffold } from '../agents/scaffold.ts';
 import { runBaseline } from '../agents/baseline.ts';
 import { runLite } from '../agents/lite.ts';
+import { runGated } from '../agents/gated.ts';
 import type { ScorerMode } from '../agents/scorer.ts';
 import type { AgentName } from '../agents/types.ts';
 import { makeWorld } from '../env/reset.ts';
@@ -92,7 +93,23 @@ export async function runEval(opts: RunnerOptions): Promise<RunnerOutput> {
 
         const liteModel = opts.miniModel ?? opts.model;
         const result =
-          agent === 'lite'
+          agent === 'gated'
+            ? await runGated({
+                model: opts.model,
+                world,
+                task,
+                maxTurns: opts.maxTurns,
+                onTurn: rec => {
+                  opts.onEvent?.({
+                    type: 'baseline-turn',
+                    agent: 'baseline', // share rendering with baseline-style agents
+                    turn: rec.turn,
+                    toolName: rec.toolName,
+                    args: rec.args,
+                  });
+                },
+              })
+            : agent === 'lite'
             ? await runLite({
                 model: liteModel,
                 world,
