@@ -23,30 +23,264 @@ This repo has two things:
 
 ---
 
-## The library
+## Quick start (library)
+
+> Not yet published to npm. For now, clone this repo and use the package
+> from `packages/foresight/`. Once published you'll be able to:
+> `npm install foresight ai zod @ai-sdk/openai`.
+
+The shortest possible working example — drop into any TypeScript file:
 
 ```ts
 import { foresight } from 'foresight';
 import { openai } from '@ai-sdk/openai';
 
+const TOOL_CATALOG = [
+  { name: 'crud_delete', description: 'Delete a record.',  args: '{ collection: string, id: string }' },
+  { name: 'crud_list',   description: 'List records.',     args: '{ collection: string }' },
+];
+
 const decision = await foresight.gate({
   goal: 'Remove user 3 from the system',
   action: { tool: 'crud_delete', args: { collection: 'users', id: '3' } },
-  state: () => snapshotMyDb(),
+  state: {
+    crud: {
+      users:  { '1': { name: 'alice' }, '3': { name: 'carol' } },
+      orders: { '47': { user_id: '3' }, '92': { user_id: '3' } },
+    },
+  },
   catalog: TOOL_CATALOG,
   model: openai('gpt-5.5'),
 });
 
-if (!decision.ok) throw new Error(decision.reason);
-// → "Visible state shows orders/47 and orders/92 reference user_id='3', so
-//    deleting users/3 alone would leave both orders orphaned."
+if (!decision.ok) {
+  console.error('rejected:', decision.reason);
+  console.error('blocking:', decision.risks_blocking);
+  // → "rejected: deleting users/3 would orphan orders/47, orders/92..."
+  process.exit(1);
+}
 // proceed with the action
 ```
 
-Plugs into Vercel AI SDK 6 (`needsApproval`), OpenAI Agents SDK
-(`ToolInputGuardrail`), LangGraph (interrupt node), or any code that calls
-async functions. Stateless, typed errors, AbortSignal, observability hooks,
-per-role model split. Full docs: **[`packages/foresight/README.md`](packages/foresight/README.md)**.
+Run the included quickstart end-to-end (~$0.20):
+
+```bash
+git clone https://github.com/tylergibbs1/foresight
+cd foresight
+bun install
+cd packages/foresight
+OPENAI_API_KEY=sk-... bun run examples/quickstart.ts
+```
+
+## What you get back
+
+```ts
+{
+  ok: false,
+  reason: "Visible state shows orders/47 and orders/92 reference user_id='3', so deleting users/3 alone would leave both orphaned.",
+  predicted_changes: [
+    { target_type: 'record', target_id: 'users/3', operation: 'delete', field: null, ... }
+  ],
+  risks: {
+    confidence: 'high',
+    reversibility: 'irreversible',
+    data_loss_risk: 'high',
+    blast_radius: 'wide',
+    unverified_preconditions: [],
+    side_effects: ['orders/47 and orders/92 become orphaned'],
+  },
+  risks_blocking: [
+    'would orphan orders/47 (user_id=3)',
+    'would orphan orders/92 (user_id=3)',
+  ],
+  goal_alignment: ['removes target users/3'],
+  noop_recommended: false,
+  note: { applies_to_tool: 'crud_delete', applies_when: ['target may have dependents'], lesson: '...' },
+  usage: { promptTokens: 1832, completionTokens: 412, totalTokens: 2244 },
+}
+```
+
+You decide what to do — throw, return early, surface to UI, prompt a human,
+escalate. The library is a pure function.
+
+## Drop-in adapters
+
+### Vercel AI SDK 6 — `needsApproval`
+
+```ts
+import { tool } from 'ai';
+import { z } from 'zod';
+import { foresight } from 'foresight';
+import { openai } from '@ai-sdk/openai';
+
+const deleteUser = tool({
+  description: 'Delete a user account.',
+  inputSchema: z.object({ id: z.string() }),
+  needsApproval: async (args, ctx) => {
+    const d = await foresight.gate({
+      goal: ctx.messages.at(-1)?.content as string,
+      action: { tool: 'crud_delete', args: { collection: 'users', ...args } },
+      state: () => snapshotDb(),
+      catalog: TOOL_CATALOG,
+      model: openai('gpt-5.5'),
+      signal: ctx.abortSignal,
+    });
+    return !d.ok; // true = require human approval / block
+  },
+  execute: async (args) => deleteFromDb(args),
+});
+```
+
+### OpenAI Agents SDK — `ToolInputGuardrail`
+
+```ts
+import type { ToolInputGuardrail } from '@openai/agents';
+import { foresight, ForesightAbortError } from 'foresight';
+import { openai } from '@ai-sdk/openai';
+
+const foresightGuard: ToolInputGuardrail = {
+  name: 'foresight',
+  execute: async ({ toolInput, context }) => {
+    try {
+      const d = await foresight.gate({
+        goal: context.userMessage,
+        action: { tool: context.toolName, args: toolInput },
+        state: () => snapshotDb(),
+        catalog: TOOL_CATALOG,
+        model: openai('gpt-5.5'),
+      });
+      return d.ok
+        ? { tripwireTriggered: false, outputInfo: { allowed: true } }
+        : { tripwireTriggered: true,  outputInfo: { reason: d.reason, blocking: d.risks_blocking } };
+    } catch (e) {
+      if (e instanceof ForesightAbortError) return { tripwireTriggered: false, outputInfo: {} };
+      throw e;
+    }
+  },
+};
+```
+
+### LangGraph — interrupt node
+
+```ts
+import { interrupt, StateGraph } from '@langchain/langgraph';
+import { foresight } from 'foresight';
+import { openai } from '@ai-sdk/openai';
+
+async function foresightCheck(state: AgentState) {
+  const d = await foresight.gate({
+    goal: state.goal,
+    action: state.pending_action,
+    state: () => snapshotDb(),
+    catalog: TOOL_CATALOG,
+    model: openai('gpt-5.5'),
+  });
+  if (!d.ok) {
+    interrupt({
+      kind: 'foresight_rejected',
+      reason: d.reason,
+      blocking: d.risks_blocking,
+      predicted: d.predicted_changes,
+      noop_recommended: d.noop_recommended,
+    });
+  }
+  return state;
+}
+
+graph.addNode('foresight_check', foresightCheck);
+graph.addEdge('plan', 'foresight_check');
+graph.addEdge('foresight_check', 'execute');
+```
+
+### No framework — just call it
+
+```ts
+const d = await foresight.gate({ goal, action, state, catalog, model });
+if (!d.ok) return { error: d.reason, blocking: d.risks_blocking };
+await actuallyDoTheThing(action);
+```
+
+## Other things you'll probably want
+
+### Cancellation with AbortSignal
+
+```ts
+await foresight.gate({
+  ...,
+  signal: AbortSignal.timeout(30_000),
+});
+// → throws ForesightAbortError on timeout
+```
+
+### Observability — wire each phase to your logger / Langfuse / OTel
+
+```ts
+await foresight.gate({
+  ...,
+  hooks: {
+    onPredict: ({ usage, ms })           => trace('foresight.predict', { ms, ...usage }),
+    onScore:   ({ usage, ms, decision }) => trace('foresight.score',   { ms, ok: decision.ok }),
+    onNote:    ({ usage, ms })           => trace('foresight.note',    { ms, ...usage }),
+  },
+});
+```
+
+### Per-role model split (run the cheap roles cheap)
+
+```ts
+await foresight.gate({
+  ...,
+  model:        openai('gpt-5.5'),       // default
+  predictModel: openai('gpt-5.5'),       // careful reasoning
+  scoreModel:   openai('gpt-5-mini'),    // structured ranking is easier
+  noteModel:    openai('gpt-5-mini'),
+});
+```
+
+### Stateless calibration — caller persists notes
+
+```ts
+const notes = await loadNotesFromDb(); // CalibrationNote[]
+const d = await foresight.gate({ ..., notes });
+if (d.note) await saveNoteToDb(d.note);
+```
+
+### Measure prediction accuracy after the action runs
+
+```ts
+import { foresight } from 'foresight';
+import { diffEvents } from 'foresight/diff';
+
+const before = await snapshotDb();
+await runAction(action);
+const after = await snapshotDb();
+
+const score = foresight.matchEvents(d.predicted_changes, diffEvents(before, after));
+console.log({ precision: score.precision, recall: score.recall, f1: score.f1 });
+// deterministic — no LLM in the metric path
+```
+
+### Typed errors so you can branch on cause
+
+```ts
+import {
+  ForesightError,           // base
+  ForesightInputError,      // bad GateOptions — programming error
+  ForesightPredictError,    // predictor LLM call failed
+  ForesightScoreError,      // scorer LLM call failed (.prediction is preserved)
+  ForesightAbortError,      // signal aborted
+} from 'foresight';
+
+try {
+  const d = await foresight.gate(opts);
+  // ...
+} catch (e) {
+  if (e instanceof ForesightInputError)   return { error: 'misconfigured: ' + e.message };
+  if (e instanceof ForesightAbortError)   return { error: 'timeout' };
+  if (e instanceof ForesightScoreError)   return { error: 'scorer failed', prediction: e.prediction };
+  throw e;
+}
+```
 
 ---
 
@@ -70,14 +304,17 @@ Cost ratio against baseline: ~26×. The economics don't justify general-purpose
 use, which is why the library is positioned as a guardrail for **irreversible
 actions you don't trust** — not as a replacement for your normal agent loop.
 
-### Reproduce it
+### Quick start (experiment)
 
 ```bash
+git clone https://github.com/tylergibbs1/foresight
+cd foresight
 bun install
 cp .env.example .env       # add OPENAI_API_KEY
 bun test                   # LLM-free smoke tests (no API key needed)
 bun run eval:smoke         # one task × one seed × scaffold (~$0.10)
 bun run eval               # full paired eval, three agent variants (~$5)
+bun run tui                # live dashboard (press 'f' for per-phase focus mode)
 ```
 
 ---
