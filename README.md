@@ -321,9 +321,44 @@ bun run tui                # live dashboard (press 'f' for per-phase focus mode)
 
 ## How the scaffold works
 
-<p align="center">
-  <img src="diagrams/jepa-pipeline-v1.png" alt="Per-turn pipeline of the JEPA scaffold" width="100%" />
-</p>
+```mermaid
+flowchart LR
+    Goal([Goal])
+    State[(World state<br/>FS + CRUD)]
+    Proposer["Proposer<br/><i>LLM, no tools</i>"]
+    Validator["Validator + Dedupe<br/><i>deterministic</i>"]
+    Predictor["Predictor × N<br/><i>LLM, goal-blind, parallel</i>"]
+    Scorer["Scorer<br/><i>LLM, sees risk metadata</i>"]
+    Executor["Executor<br/><i>deterministic</i>"]
+    Calibrator["Calibrator<br/><i>LLM, structured note</i>"]
+    Done{{"Exit:<br/>noop or goal-met"}}
+
+    Goal --> Proposer
+    Goal --> Scorer
+    State -. read .-> Proposer
+    State -. read .-> Predictor
+    State -. read .-> Scorer
+
+    Proposer -->|"candidates"| Validator
+    Validator -->|"validated"| Predictor
+    Predictor -->|"predictions"| Scorer
+    Scorer -->|"chosen action"| Executor
+    Scorer -. "noop" .-> Done
+    Executor ==>|"writes"| State
+    Executor -->|"actual events"| Calibrator
+    Calibrator -. "note (next turn)" .-> Proposer
+
+    classDef llm fill:#dbeafe,stroke:#1e40af,color:#1e3a8a
+    classDef det fill:#fef3c7,stroke:#a16207,color:#713f12
+    classDef exit fill:#fecaca,stroke:#991b1b,color:#7f1d1d
+    classDef state fill:#e0e7ff,stroke:#3730a3,color:#312e81
+    classDef goal fill:#fef9c3,stroke:#a16207,color:#713f12
+    class Proposer,Predictor,Scorer,Calibrator llm
+    class Validator,Executor det
+    class Done exit
+    class State state
+    class Goal goal
+```
 
 Each agent turn runs six stages:
 
