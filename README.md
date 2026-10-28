@@ -72,6 +72,8 @@ cd packages/foresight
 OPENAI_API_KEY=sk-... bun run examples/quickstart.ts
 ```
 
+Full library docs (options, types, adapters): [`packages/foresight/README.md`](packages/foresight/README.md).
+
 ## What you get back
 
 ```ts
@@ -290,7 +292,7 @@ The library exists because we ran a hypothesis test, found a real signal,
 and stripped the result down to its load-bearing parts. The PRD is in
 [`PRD.md`](PRD.md); the trap tasks are in `src/tasks/traps.ts`.
 
-### Headline result (72-run paired eval, gpt-5.5, six implicit-trap families)
+### Headline result (72-run paired eval, gpt-5.5, six trap tasks across four families)
 
 ```
 agent      success      destr   $/run    vs baseline   notes
@@ -332,7 +334,7 @@ bun install
 cp .env.example .env       # add OPENAI_API_KEY
 bun test                   # LLM-free smoke tests (no API key needed)
 bun run eval:smoke         # one task × one seed × scaffold (~$0.10)
-bun run eval               # full paired eval, three agent variants (~$5)
+bun run eval               # full paired eval, default agent set (~$5)
 bun run tui                # live dashboard (press 'f' for per-phase focus mode)
 ```
 
@@ -379,13 +381,16 @@ gate around the dangerous ones.
 
 ```
 bun src/eval/cli.ts \
-  --agents scaffold,baseline,thinking  # which to run (default: all three)
+  --agents scaffold,gated,baseline,thinking  # default: lite,baseline,thinking,scaffold
   --tasks 20                   # cap the number of task instances
-  --seeds 3                    # repeats per agent × task
-  --candidates 5               # proposer candidate count
+  --task-filter trap_          # substring filter on task ids
+  --seeds 3                    # repeats per agent × task (default 3)
+  --candidates 5               # proposer candidate count (default 5)
   --notes-to-predictor true    # feed calibration notes to predictor
   --scorer-mode comparative    # comparative | independent
   --max-turns 20
+  --model openai/gpt-5.5       # default: $MODEL or openai/gpt-5.5
+  --mini-model <model>         # scaffold's predictor/scorer/calibrator model
   --out results/run-<ts>.json
 ```
 
@@ -393,9 +398,14 @@ bun src/eval/cli.ts \
 focus view that shows the proposer's candidates, predictor's typed events,
 scorer's rankings, executor's diff, and calibrator's note as each phase fills in.
 
-Three agent variants for paired comparison:
+Agent variants for paired comparison:
 
 - `scaffold` — the full JEPA-style pipeline.
+- `gated` — vanilla `ToolLoopAgent` with every mutation pre-checked by
+  `foresight.gate()`; reads bypass the gate. This is the published library.
+- `lite` — one `ToolLoopAgent` with the `noop` sentinel and a prompt that
+  encodes the scaffold's safety rules (read first, verify preconditions,
+  `noop` when nothing should happen).
 - `baseline` — vanilla `ToolLoopAgent`, same model and tools, no extra prompt.
 - `thinking` — same as baseline plus a "reason before acting" instruction.
   Token-budget control: a scaffold win that doesn't beat `thinking` is just
@@ -419,7 +429,7 @@ src/                    # the experiment that produced the library
   env/                  # in-memory FS + CRUD world, snapshots, diffs
   tasks/                # task definitions + automated correctness checks
                         # (incl. trap_orphan, trap_overwrite, trap_glob, trap_chain)
-  agents/               # proposer, predictor, scorer, calibrator, scaffold, baseline, lite
+  agents/               # proposer, predictor, scorer, calibrator, scaffold, gated, baseline, lite
   eval/                 # runner, metrics, CLI + TUI entrypoints
   test/                 # bun:test smoke tests (LLM-free)
 
